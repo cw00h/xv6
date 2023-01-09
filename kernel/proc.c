@@ -15,6 +15,8 @@ struct proc *initproc;
 int nextpid = 1;
 struct spinlock pid_lock;
 
+int nproc = 0;
+
 extern void forkret(void);
 static void freeproc(struct proc *p);
 
@@ -141,6 +143,7 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  nproc++;
   return p;
 }
 
@@ -164,6 +167,7 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+  nproc--;
 }
 
 // Create a user page table for a given process,
@@ -656,4 +660,8 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+int sysinfo_nproc(void){
+  return nproc;
 }
