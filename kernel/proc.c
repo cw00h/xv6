@@ -15,6 +15,7 @@ struct proc *initproc;
 int nextpid = 1;
 struct spinlock pid_lock;
 
+extern pte_t *walk(pagetable_t pagetable, uint64 va, int alloc);
 extern void forkret(void);
 static void freeproc(struct proc *p);
 
@@ -674,4 +675,29 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+
+int pgaccess(void *base, int len, void *mask) {
+  struct proc *p = myproc();
+  unsigned int temp;
+  char *_base = base;
+  pte_t *pte;
+
+  if(len > 32) return -1;
+
+  for(int i = 0; i < len; i++) {
+    if((pte = walk(p->pagetable, (uint64)(_base + PGSIZE * i), 0))) {
+      if(*pte & PTE_A) {
+        *pte &= ~PTE_A;
+        temp |= (1 << i);
+      }
+    }
+    else return -1;
+  }
+
+  if(copyout(p->pagetable, (uint64)mask, (char *)&temp, sizeof(temp)) < 0) {
+    printf("copyout error\n");
+  }
+  return 0;
 }
