@@ -79,17 +79,19 @@ usertrap(void)
   // give up the CPU if this is a timer interrupt.
   if(which_dev == 2){
     if(!p->alarm_handler && !p->alarm_interval){
-      printf("no!\n");
       p->alarm_ticks = 0;
     }
     else {
-      printf("hit in usertrap\n");
       p->alarm_ticks++;
-      printf("ticks: %d, interval: %d\n", p->alarm_ticks, p->alarm_interval);
-      if(p->alarm_ticks == p->alarm_interval) {
-        // (*p->alarm_handler)(); // How should kernel call user function???
+      if(p->alarm_ticks == p->alarm_interval && !p->handler_running) {
+        // Save registers before jumping to handler
+        p->temp = *p->trapframe;
+        // Make kernel return to alarm handler
         p->trapframe->epc = (uint64) p->alarm_handler;
+        // Reset alarm ticks of user process
         p->alarm_ticks = 0;
+        // Indicate that alarm handler is running in user process (For preventing reentrant calls to the handler)
+        p->handler_running = 1;        
       }
     }
     yield();

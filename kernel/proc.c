@@ -144,6 +144,7 @@ found:
   p->alarm_ticks = 0;
   p->alarm_handler = 0;
   p->alarm_interval = 0;
+  p->handler_running = 0;
 
   return p;
 }
@@ -669,5 +670,11 @@ int sigalarm(int ticks, void (*handler)()) {
 }
 
 int sigreturn(void) {
-  return 0;
+  struct proc *p = myproc();
+  
+  // Restore registers
+  *(p->trapframe) = p->temp;
+  // Indicate that alarm handler has returned. (For preventing reentrant calls to the handler)
+  p->handler_running = 0;
+  return 1;
 }

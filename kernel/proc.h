@@ -108,4 +108,6 @@ struct proc {
   int alarm_interval;
   void (*alarm_handler)();
   int alarm_ticks;             // Keep track of how many ticks have passed since the last call to a process's alarm handler
+  struct trapframe temp;       // For sigreturn()
+  int handler_running;         // Indicate whether alarm handler is running in user process (For preventing reentrant calls to the handler)
 };

@@ -103,12 +103,12 @@ uint64 sys_sigalarm(void) {
 
   if(argint(0, &interval) < 0) return -1;
   if(argaddr(1, &handler) < 0) return -1;
-  printf("handler: %p\n", (void (*)(void))handler);
 
   return sigalarm(interval, (void (*)(void))handler);
 }
 
 uint64 sys_sigreturn(void) {
-  return 0;
+  sigreturn();
+  return 1;
 }
 
