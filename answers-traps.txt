@@ -1,0 +1,6 @@
+a2
+main + 26
+0x630
+0x38
+He110 World / If the RISC-V were big-endian, i should be 0x726c6400.
+a2
