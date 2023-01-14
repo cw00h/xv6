@@ -16,6 +16,8 @@ void kernelvec();
 
 extern int devintr();
 
+extern int refcnt[];
+
 void
 trapinit(void)
 {
@@ -37,6 +39,10 @@ void
 usertrap(void)
 {
   int which_dev = 0;
+  pte_t *pte;
+  uint64 va, pa;
+  uint flags;
+  char *mem;
 
   if((r_sstatus() & SSTATUS_SPP) != 0)
     panic("usertrap: not from user mode");
@@ -67,10 +73,39 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+  }
+  else if(r_scause() == 15) { // Page fault
+    va = r_stval(); // stval register contains the addr couldn't be translated.
+
+    if(va >= MAXVA) exit(-1);
+
+    pte = walk(p->pagetable, va, 0);
+
+    if(((*pte & PTE_W) == 0) && (*pte & PTE_RSW) && (*pte & PTE_V) && (*pte & PTE_U)) {
+      pa = PTE2PA(*pte);
+
+      if((mem = kalloc()) == 0) exit(-1);
+
+      memmove(mem, (char*)pa, PGSIZE);
+
+      *pte |= PTE_W;
+      *pte &= ~PTE_RSW;
+      *pte &= ~PTE_V;
+      flags = PTE_FLAGS(*pte);
+      
+      if(mappages(p->pagetable, PGROUNDDOWN(va), PGSIZE, (uint64)mem, flags) != 0){
+        refcnt[PA2IDX((uint64)mem)] = 0;
+        kfree(mem);
+        exit(-1);
+      }
+      
+      kfree((void *)pa);
+    }
+    else exit(-1);
   } else {
-    printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
-    printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
-    p->killed = 1;
+      printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
+      printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
+      p->killed = 1;
   }
 
   if(p->killed)
