@@ -16,7 +16,7 @@ struct entry {
 struct entry *table[NBUCKET];
 int keys[NKEYS];
 int nthread = 1;
-
+pthread_mutex_t lock0, lock1, lock2, lock3, lock4;
 
 double
 now()
@@ -43,6 +43,25 @@ void put(int key, int value)
 
   // is the key already present?
   struct entry *e = 0;
+
+  switch(i) {
+    case 0:
+      pthread_mutex_lock(&lock0);       // acquire lock
+      break;
+    case 1:
+      pthread_mutex_lock(&lock1);       // acquire lock
+      break;
+    case 2:
+      pthread_mutex_lock(&lock2);       // acquire lock
+      break;
+    case 3:
+      pthread_mutex_lock(&lock3);       // acquire lock
+      break;
+    case 4:
+      pthread_mutex_lock(&lock4);       // acquire lock
+      break;
+  }
+
   for (e = table[i]; e != 0; e = e->next) {
     if (e->key == key)
       break;
@@ -55,6 +74,24 @@ void put(int key, int value)
     insert(key, value, &table[i], table[i]);
   }
 
+  switch(i) {
+    case 0:
+      pthread_mutex_unlock(&lock0);
+      break;
+    case 1:
+      pthread_mutex_unlock(&lock1);
+      break;
+    case 2:
+      pthread_mutex_unlock(&lock2);
+      break;
+    case 3:
+      pthread_mutex_unlock(&lock3);
+      break;
+    case 4:
+      pthread_mutex_unlock(&lock4);
+      break;
+  }
+
 }
 
 static struct entry*
@@ -62,10 +99,45 @@ get(int key)
 {
   int i = key % NBUCKET;
 
+  switch(i) {
+    case 0:
+      pthread_mutex_lock(&lock0);       // acquire lock
+      break;
+    case 1:
+      pthread_mutex_lock(&lock1);       // acquire lock
+      break;
+    case 2:
+      pthread_mutex_lock(&lock2);       // acquire lock
+      break;
+    case 3:
+      pthread_mutex_lock(&lock3);       // acquire lock
+      break;
+    case 4:
+      pthread_mutex_lock(&lock4);       // acquire lock
+      break;
+  }
 
   struct entry *e = 0;
   for (e = table[i]; e != 0; e = e->next) {
     if (e->key == key) break;
+  }
+
+  switch(i) {
+    case 0:
+      pthread_mutex_unlock(&lock0);
+      break;
+    case 1:
+      pthread_mutex_unlock(&lock1);
+      break;
+    case 2:
+      pthread_mutex_unlock(&lock2);
+      break;
+    case 3:
+      pthread_mutex_unlock(&lock3);
+      break;
+    case 4:
+      pthread_mutex_unlock(&lock4);
+      break;
   }
 
   return e;
@@ -110,6 +182,13 @@ main(int argc, char *argv[])
     fprintf(stderr, "Usage: %s nthreads\n", argv[0]);
     exit(-1);
   }
+
+  pthread_mutex_init(&lock0, NULL); // initialize the lock
+  pthread_mutex_init(&lock1, NULL); // initialize the lock
+  pthread_mutex_init(&lock2, NULL); // initialize the lock
+  pthread_mutex_init(&lock3, NULL); // initialize the lock
+  pthread_mutex_init(&lock4, NULL); // initialize the lock
+
   nthread = atoi(argv[1]);
   tha = malloc(sizeof(pthread_t) * nthread);
   srandom(0);
