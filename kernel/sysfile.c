@@ -286,7 +286,7 @@ create(char *path, short type, short major, short minor)
 uint64
 sys_open(void)
 {
-  char path[MAXPATH];
+  char path[MAXPATH], symlink_path[MAXPATH];
   int fd, omode;
   struct file *f;
   struct inode *ip;
@@ -320,6 +320,21 @@ sys_open(void)
     iunlockput(ip);
     end_op();
     return -1;
+  }
+
+  // Follow the symlinks 
+  if((ip->type == T_SYMLINK) && ((omode & O_NOFOLLOW) == 0)) {
+    safestrcpy(symlink_path, ip->path, sizeof(ip->path));
+    while(ip->type == T_SYMLINK) {
+      iunlock(ip);
+      // If symlinks form a cycle, return -1
+      if(((ip = namei(symlink_path)) == 0) || (!strncmp(symlink_path, path, MAXPATH))) { 
+        end_op();
+        return -1;
+      }
+      ilock(ip);
+      safestrcpy(symlink_path, ip->path, sizeof(ip->path));
+    }    
   }
 
   if((f = filealloc()) == 0 || (fd = fdalloc(f)) < 0){
@@ -482,5 +497,29 @@ sys_pipe(void)
     fileclose(wf);
     return -1;
   }
+  return 0;
+}
+
+//int symlink(char *target, char *path);
+uint64 sys_symlink(void) {
+  char target[MAXPATH], path[MAXPATH];
+  struct inode *ip;
+
+  if(argstr(0, target, MAXPATH) < 0 || argstr(1, path, MAXPATH) < 0) 
+    return -1;
+  begin_op();
+
+  // Create new symlink file
+  if((ip = create(path, T_SYMLINK, 0, 0)) == 0) {
+    end_op();
+    return -1;
+  }
+
+  safestrcpy(ip->path, target, MAXPATH);
+
+  iupdate(ip);
+  iunlockput(ip);
+
+  end_op();
   return 0;
 }
