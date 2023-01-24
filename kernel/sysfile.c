@@ -484,3 +484,139 @@ sys_pipe(void)
   }
   return 0;
 }
+
+//void *mmap(void *, uint, int, int, int, int);
+uint64 sys_mmap(void) {
+  uint length;
+  int i, va, prot, flags, fd, offset, pages, skip;
+  struct proc *p = myproc();
+  
+  if(argint(1, (int*)&length) < 0 || argint(2, &prot) < 0 || argint(3, &flags) < 0 || argint(4, &fd) < 0 || argint(5, &offset) < 0)
+    return -1;
+  pages = PGROUNDUP(length) / PGSIZE;
+
+  // Check if file is not writable, but prot is PROT_WRITE and flags is MAP_SHARED
+  if((flags & MAP_SHARED) && (p->ofile[fd]->writable == 0) && (prot & PROT_WRITE)) return -1;
+
+  // Find 'pages' continuous free pages
+  for(va = 0; va < MAXVA; va += PGSIZE) {
+    skip = 0;
+
+    // Check if the page is already mapped by mmap
+    for(i = 0; i < 16; i++) {
+      if(!p->VMAs[i].length) continue;
+      if(p->VMAs[i].start <= va && va < p->VMAs[i].start + p->VMAs[i].length) {
+        skip = 1;
+        break;
+      }
+    }
+    if(skip) continue;
+
+    // Check if the page is already mapped by the process
+    pte_t *pte = walk(p->pagetable, va, 0);
+    if((*pte) && (*pte & PTE_V)) {
+      continue;
+    }
+
+    // Check continuous 'pages' pages in same manner
+    for(i = 1; i < pages; i++) {
+      // Check if the i-th page is already mapped by mmap
+      for(int j = 0; j < 16; j++) {
+        if(!p->VMAs[j].length) continue;
+        if(p->VMAs[j].start <= va + i * PGSIZE && va + i * PGSIZE < p->VMAs[j].start + p->VMAs[j].length) {
+          skip = 1;
+          break;
+        } 
+      }
+      if(skip) break;
+
+      // Check if the i-th page is already mapped by the process
+      pte = walk(p->pagetable, va + i * PGSIZE, 0);
+      if((*pte) && (*pte & PTE_V)){
+        break;
+      }
+    }
+    if(i == pages) {
+      break;
+    }
+    // Skip checked pages
+    else {
+      va += i * PGSIZE;
+    }
+  }
+  if(va >= MAXVA) panic("mmap: no free pages");
+
+  // Add a new VMA struct
+  for(i = 0; i < 16; i++) {
+    if(p->VMAs[i].length == 0) {
+      p->VMAs[i].start = va;
+      p->VMAs[i].length = PGROUNDUP(length);
+      p->VMAs[i].prot = prot;
+      p->VMAs[i].flags = flags;
+      p->VMAs[i].fd = fd;
+      p->VMAs[i].file = p->ofile[fd];
+      filedup(p->VMAs[i].file);
+      break;
+    }
+  }
+  if(i == 16) panic("mmap: too many VMAs");
+
+  return va;
+}
+
+//int munmap(void *, uint);
+uint64 sys_munmap(void) {
+  uint64 addr;
+  uint length;
+  int idx;
+  pte_t *pte;
+  struct proc *p = myproc();
+
+  if(argaddr(0, &addr) < 0 || argint(1, (int*)&length) < 0)
+    return -1;
+
+  // Find the VMA that contains addr
+  for(idx = 0; idx < 16; idx++) {
+    if(p->VMAs[idx].length != 0 && p->VMAs[idx].start <= addr && addr < p->VMAs[idx].start + p->VMAs[idx].length) {
+      break;
+    }
+  }
+  if(idx == 16) return -1;
+  
+  // Check if the VMA is MAP_SHARED. If so, write back pages
+  if(p->VMAs[idx].flags & MAP_SHARED)
+    filewrite(p->VMAs[idx].file, addr, length);
+
+  // Unmap only mapped pages
+  for(int i = 0; i < length / PGSIZE; i++) {
+    pte = walk(p->pagetable, addr + i * PGSIZE, 0);
+    if((*pte) && (*pte & PTE_V)) {
+      uvmunmap(p->pagetable, addr + i * PGSIZE, 1, 0);      
+    }
+  }
+
+  // Modify the VMA
+  if(addr == p->VMAs[idx].start) {
+    if(length == p->VMAs[idx].length) {
+      // Delete entire VMA
+      fileclose(p->VMAs[idx].file);
+      memset(p->VMAs + idx, 0, sizeof(struct VMA));
+    }
+    else {
+      // Modify the start of the VMA
+      p->VMAs[idx].start += length;
+      p->VMAs[idx].length -= length;
+    }
+  }
+  else {
+    if(addr + length == p->VMAs[idx].start + p->VMAs[idx].length) {
+      // Modify the end of the VMA
+      p->VMAs[idx].length -= length;
+    }
+    else {
+      // Split the VMA - not necessary for this lab
+    }
+  }  
+
+  return 0;
+}

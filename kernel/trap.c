@@ -5,6 +5,10 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "sleeplock.h"
+#include "fs.h"
+#include "file.h"
+#include "fcntl.h"
 
 struct spinlock tickslock;
 uint ticks;
@@ -67,7 +71,58 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
-  } else {
+  } else if(r_scause() == 13 || r_scause() == 15) { // page fault
+    int idx, offset, prot = 0;
+    uint64 va = r_stval();
+    if (va >= MAXVA) {
+      printf("usertrap(): page fault, but invalid va %p\n", va);
+      exit(-1);
+    }
+
+    // Find the VMA that contains the faulting address
+    for(idx = 0; idx < 16; idx++) {
+      if(p->VMAs[idx].length != 0 && p->VMAs[idx].start <= va && va < p->VMAs[idx].start + p->VMAs[idx].length) {
+        break;
+      }
+    }
+    if(idx == 16) {
+      printf("usertrap(): page fault, but no VMA found for va %p\n", va);
+      exit(-1);
+    }
+
+    // Allocate a page of physical memory
+    uint64 pa = (uint64)kalloc();
+    if(pa == 0) {
+      printf("usertrap(): page fault, but out of memory\n");
+    }
+    memset((void *)pa, 0, PGSIZE);
+
+    offset = PGROUNDDOWN(va) - p->VMAs[idx].start;
+
+    // Read 4096 bytes of the relevant file into that page
+    struct file *f = p->VMAs[idx].file;
+
+    ilock(f->ip);
+    if(readi(f->ip, 0, pa, offset, PGSIZE) < 0) {
+      printf("usertrap(): page fault, but readi failed\n");
+      kfree((void *)pa);
+      exit(-1);
+    }
+    iunlock(f->ip);
+    
+    // Map that page into the process's address space
+    if(p->VMAs[idx].prot & PROT_READ) prot = PTE_R;
+    if(p->VMAs[idx].prot & PROT_WRITE) prot |= PTE_W;
+    if(p->VMAs[idx].prot & PROT_EXEC) prot |= PTE_X;
+    prot |= PTE_U;
+    
+    if(mappages(p->pagetable, PGROUNDDOWN(va), PGSIZE, pa, prot) != 0) {
+      printf("usertrap(): page fault, but mappages failed\n");
+      kfree((void *)pa);
+      exit(-1);
+    }
+  }
+  else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
     p->killed = 1;

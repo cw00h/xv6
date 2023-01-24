@@ -5,6 +5,7 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "fcntl.h"
 
 struct cpu cpus[NCPU];
 
@@ -305,6 +306,12 @@ fork(void)
 
   pid = np->pid;
 
+  // Copy parent's VMAs
+  for(i = 0; i < 16; i++) {
+    np->VMAs[i] = p->VMAs[i];
+    if(np->VMAs[i].length != 0) filedup(np->VMAs[i].file);
+  }
+
   release(&np->lock);
 
   acquire(&wait_lock);
@@ -350,6 +357,27 @@ exit(int status)
       struct file *f = p->ofile[fd];
       fileclose(f);
       p->ofile[fd] = 0;
+    }
+  }
+
+  // Clear all VMAs created by mmap
+  for(int i = 0; i < 16; i++) {
+    if(p->VMAs[i].length != 0) {
+      // If the VMA is shared, write back to the file
+      if(p->VMAs[i].flags & MAP_SHARED)
+        filewrite(p->VMAs[i].file, p->VMAs[i].start, p->VMAs[i].length);
+
+      // Unmap only mapped pages
+      for(int j = 0; j < p->VMAs[i].length / PGSIZE; j++) {
+        pte_t *pte = walk(p->pagetable, p->VMAs[i].start + j * PGSIZE, 0);
+        if((*pte) && (*pte & PTE_V)) {
+          uvmunmap(p->pagetable, p->VMAs[i].start + j * PGSIZE, 1, 0);
+        }
+      }
+
+      // Close the file
+      fileclose(p->VMAs[i].file);
+      memset(p->VMAs + i, 0, sizeof(struct VMA));
     }
   }
 
